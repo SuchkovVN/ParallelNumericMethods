@@ -2,13 +2,16 @@
 \contentsline {section}{\numberline {1}Введение}{1}{section.1}%
 \contentsline {section}{\numberline {2}Постановка задачи}{1}{section.2}%
 \contentsline {section}{\numberline {3}Описание метода решения задачи}{1}{section.3}%
-\contentsline {section}{\numberline {4}Описание реализации алгоритма}{2}{section.4}%
-\contentsline {subsection}{\numberline {4.1}Структуры данных}{2}{subsection.4.1}%
-\contentsline {subsection}{\numberline {4.2}Описание логики программы}{2}{subsection.4.2}%
-\contentsline {section}{\numberline {5}Реализация параллельного алгоритма с импользованием общей памяти}{3}{section.5}%
-\contentsline {section}{\numberline {6}Описание тестовых задач}{3}{section.6}%
-\contentsline {subsection}{\numberline {6.1}Проверка корректности результата}{3}{subsection.6.1}%
-\contentsline {subsection}{\numberline {6.2}Тесты производительности и масштабируемости}{4}{subsection.6.2}%
-\contentsline {section}{\numberline {7}Заключение}{4}{section.7}%
-\contentsline {section}{{\cyrillictext \CYRS \cyrp \cyri \cyrs \cyro \cyrk \ \cyrl \cyri \cyrt \cyre \cyrr \cyra \cyrt \cyru \cyrr \cyrery }}{4}{section*.4}%
-\contentsline {section}{\numberline {A}Приложение. Код}{5}{appendix.A}%
+\contentsline {section}{\numberline {4}Теоретические свойства последовательного алгоритма}{2}{section.4}%
+\contentsline {section}{\numberline {5}Описание реализации алгоритма}{2}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Структуры данных}{2}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Описание логики программы}{2}{subsection.5.2}%
+\contentsline {section}{\numberline {6}Различные способы распараллеливания и их сравнение}{3}{section.6}%
+\contentsline {section}{\numberline {7}Реализация параллельного алгоритма с импользованием общей памяти}{3}{section.7}%
+\contentsline {section}{\numberline {8}Описание тестовых задач}{4}{section.8}%
+\contentsline {section}{\numberline {9}Результаты экспериментов}{4}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Проверка корректности результата}{4}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Тесты производительности и масштабируемости}{4}{subsection.9.2}%
+\contentsline {section}{\numberline {10}Заключение}{5}{section.10}%
+\contentsline {section}{{\cyrillictext \CYRS \cyrp \cyri \cyrs \cyro \cyrk \ \cyrl \cyri \cyrt \cyre \cyrr \cyra \cyrt \cyru \cyrr \cyrery }}{5}{section*.4}%
+\contentsline {section}{\numberline {A}Приложение. Код}{6}{appendix.A}%
