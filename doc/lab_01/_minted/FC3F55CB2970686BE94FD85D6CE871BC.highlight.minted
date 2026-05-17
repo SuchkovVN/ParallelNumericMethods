@@ -1,0 +1,10 @@
+\begin{MintedVerbatim}[commandchars=\\\{\}]
+\PYG{+w}{    }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{int}\PYG{+w}{ }\PYG{n}{j}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{l+m+mi}{0}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{j}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{A}\PYG{p}{.}\PYG{n}{m}\PYG{p}{;}\PYG{+w}{ }\PYG{o}{++}\PYG{n}{j}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{        }\PYG{err}{\PYGZbs{}\PYGZbs{}}\PYG{+w}{ }\PYG{n}{Вычисление}\PYG{+w}{ }\PYG{n}{диагонального}\PYG{+w}{ }\PYG{n}{элемента}\PYG{p}{.}
+
+\PYG{c+cp}{\PYGZsh{}pragma omp parallel for private(acc, quot, rem, sum) schedule(dynamic, 8)}
+\PYG{+w}{        }\PYG{k}{for}\PYG{+w}{ }\PYG{p}{(}\PYG{k+kt}{int}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{=}\PYG{+w}{ }\PYG{n}{j}\PYG{+w}{ }\PYG{o}{+}\PYG{+w}{ }\PYG{l+m+mi}{1}\PYG{p}{;}\PYG{+w}{ }\PYG{n}{s}\PYG{+w}{ }\PYG{o}{\PYGZlt{}}\PYG{+w}{ }\PYG{n}{L}\PYG{p}{.}\PYG{n}{n}\PYG{p}{;}\PYG{+w}{ }\PYG{o}{++}\PYG{n}{s}\PYG{p}{)}\PYG{+w}{ }\PYG{p}{\PYGZob{}}
+\PYG{+w}{            }\PYG{err}{\PYGZbs{}\PYGZbs{}}\PYG{+w}{ }\PYG{n}{Вычисление}\PYG{+w}{ }\PYG{n}{поддиагональных}\PYG{+w}{ }\PYG{n}{элементов}\PYG{+w}{ }\PYG{n}{для}\PYG{+w}{ }\PYG{n}{вычисленного}\PYG{+w}{ }\PYG{n}{выше}\PYG{+w}{ }\PYG{n}{элемента}\PYG{p}{.}
+\PYG{+w}{        }\PYG{p}{\PYGZcb{}}
+\PYG{+w}{    }\PYG{p}{\PYGZcb{}}
+\end{MintedVerbatim}

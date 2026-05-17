@@ -1,0 +1,710 @@
+\documentclass[11pt, a4paper]{article}      
+\usepackage[T2A]{fontenc}
+\usepackage[utf8x]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{csquotes}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage[pdftex]{graphicx}
+\usepackage{caption}
+\usepackage[a4paper,left=2cm,right=2cm,
+top=2cm,bottom=2cm,bindingoffset=0cm]{geometry}
+\usepackage[colorlinks=true, linkcolor=black, urlcolor=blue, citecolor=black]{hyperref}
+\usepackage{indentfirst}
+\usepackage[nottoc]{tocbibind}
+\usepackage{arydshln}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{minted}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codeorange}{rgb}{0.8, 0.5, 0}
+
+\captionsetup[figure]{name=Рисунок}
+
+\def\newsection#1{
+    \section{#1}
+    % \addcontentsline{toc}{section}{#1}
+}
+\def\newsubsection#1{
+    \subsection{#1}
+    % \addcontentsline{toc}{subsection}{#1}
+}
+
+\lstdefinestyle{customc}{
+  inputencoding=utf8x,
+  extendedchars=\true,
+  belowcaptionskip=1\baselineskip,
+  breaklines=true,
+  frame=L,
+  xleftmargin=\parindent,
+  language=C++,
+  showstringspaces=false,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\bfseries\color{blue},
+  commentstyle=\color{codegreen},
+  identifierstyle=\color{black},
+  stringstyle=\color{codeorange},
+  keepspaces=true,
+}
+\lstset{style=customc}
+
+\begin{document}
+
+\begin{center}
+Министерство науки и высшего образования Российской Федерации \\
+Федеральное государственное автономное образовательное учреждение \\
+высшего образования\\ 
+\textbf{«Национальный исследовательский \\ Нижегородский государственный университет \\
+им. Н.И. Лобачевского (ННГУ)»}\\[1.5cm]
+\textbf{Институт информационных технологий, математики и механики }\\[5.5cm]
+
+\textbf{Отчет по лабораторной работе} \\
+\textbf{по курсу}  \\
+``Параллельные численные методы'' \\
+``Блочное разложение Холецкого'' \\ [5cm]
+
+
+\begin{flushright}
+\begin{minipage}{0.52\textwidth}
+\begin{flushleft}
+\textbf{Выполнил:} \\
+студент группы 3825М1ПМкн1 \\
+Сучков В.Н.\\[0.3cm]
+\textbf{Проверил:}\\
+д.т.н., проф. кафедры МОСТ\\  Баркалов К.А.\\[0.3cm]
+\end{flushleft}
+\end{minipage}
+\end{flushright}
+
+\vfill
+
+Нижний Новгород \\
+2025
+
+\thispagestyle{empty}
+\end{center}
+
+\newpage
+\tableofcontents
+\thispagestyle{empty}
+\newpage
+\newsection{Введение}
+\setcounter{page}{1}
+В рамках данной лабораторной работы был реализован и ислледован параллельный блочный алгоритм разложения Холецкого для
+симметричной положитеьльно определённой матрицы. Особенностью данного алгоритма явялется то, что, помимо того, что они явялется
+параллельным, в нём применяется разбиение входных данных на блоки, для повышения производительности за счёт более эффективного
+использования кэш-памяти процессора.
+
+
+Для параллелизации алгоритма использовался фреймворк OpenMP, а также в реализации алгоритма применялись SIMD интринсики из набора инструкций AVX2.
+
+
+\newsection{Постановка задачи}
+На языке C++ реализуется функция, выполняющая блочное разложение Холецкого вида 
+\[
+    A = LL^T,
+\]
+где $L$-нижнетреугольная матрица и $A = A^T > 0$.
+
+\begin{lstlisting}[language=C++, frame=single]
+    void Cholesky_Decomposition(double* A, double* L, int n);
+\end{lstlisting}
+где в свою очередь
+\begin{itemize}
+    \item $n$ - порядок матрицы $A$.
+    \item $A$ - указатель на симметричную положитеьльно определённую матрицу размера $n \times n$ (row-major формат хранения).
+    \item $L$ - указатель на результирующую нижнетреугольную матрицу (так же row-major формат хранения).
+\end{itemize}
+
+\textbf{Критерии и ограничения:}
+\begin{itemize}
+    \item Лимит по времени 100 с, по памяти: 128 Мб.
+    \item Корректность ответа проверяется с помощью относительной невязки. Решение считается удовлетворительным если верно $\frac{|| LL^T - A ||_2}{||A||_2} < 0.01$.
+    \item Показатель эффективности параллельной версии должен быть не менее 50\% для всех тестов.
+\end{itemize}
+
+\newsection{Описание метода решения задачи}
+Основой для решения задачи послужит блочный алгоритм разложения Холецкого. Входная матрицы $A$ и $L$ разбиваются на блоки следующим образом
+\[
+    A =
+    \left(\begin{array}{c c}
+        A_{11} & A_{12} \\
+        A_{21} & A_{22} \\
+    \end{array}\right),
+    L =
+    \left(\begin{array}{c c}
+        L_{11} & 0 \\
+        L_{21} & L_{22} \\
+    \end{array}\right),
+\]
+Блок $A_{11}$ имеет размер $k \times k$, где $k$ - некоторый выбранный заранее размер блока. Тогда, матрицу $A$ можно 
+записать как произведение матриц $LL^T$, чтобы найти неизвестный блоки матрицы $L$.
+\[
+    A =
+    \left(\begin{array}{c c}
+        A_{11} & A_{12} \\
+        A_{21} & A_{22} \\
+    \end{array}\right) =
+    \left(\begin{array}{c c}
+        L_{11} & 0 \\
+        L_{21} & L_{22} \\
+    \end{array}\right)
+    \left(\begin{array}{c c}
+        L_{11}^T & L_{21}^T \\
+        0 & L_{22}^T \\
+    \end{array}\right) =
+    \left(\begin{array}{c c}
+        L_{11}L_{11}^T & L_{11}L_{21}^T \\
+        L_{21}L_{11}^T & L_{21}L_{21}^T + L_{22}L_{22}^T \\
+    \end{array}\right)
+\]
+Отсюда можем записать несколько равенств:
+\begin{itemize}
+    \item $L_{11}L_{11}^T = A_{11}$ - из этого равенства зная $A_{11}$ найдём $L_{11}$ с помощью неблочного разложения Холецкого.
+    \item $L_{21}L_{11}^T = A_{21}$ - получив $L_{11}^T$ из равенства выше сможем найти $L_{21}$ как решение набора СЛАУ.
+    \item $L_{21}L_{21}^T + L_{22}L_{22}^T = A_{22}$ - в этом уравнении сделаем замену вида $\tilde{A} = A_{22} - L_{21}L_{21}^T$. Тогда уравнение
+    запишется в виде $\tilde{A} = L_{22}L_{22}^T$. Теперь, нахождение $L_{22}$ сводится к выполнению блочного разложения Холецкого к известной
+    симметричной матрице $\tilde{A}$. 
+\end{itemize}
+Таким образом, получаем рекурсивный алгоритм, который последовательно обрабатывает матрицу $A$.
+
+
+Суммарная трудоемкость алгоритма составляет $\frac{1}{3}n^3 + O(n^2)$ арифмитических операций. Метод Холецкого обладает
+довольно высокой вычислительной устойчивостью. Рассмотрим решение с некоторой машинной погрешностью $(A + \Delta A)$. Норма матрицы
+возмущений имеет верхнюю оценку
+\[
+    \| \Delta A \| \leqslant 3n^2\varepsilon_m \|A\| + O(\varepsilon_m^2),
+\]
+где $\varepsilon_m$ - машинная погрешность.
+
+Сами матрицы хранятся в оперативной памяти компьютера в линейном представлении, как непрерывные последовательности чисел,
+разложенные по строкам (row-major формат).
+
+\newsection{Описание реализации алгоритма}
+\newsubsection{Структуры данных}
+Входная матрица $A$ и результирующая $L$ хранятся в памяти как одномерные массивы типа \texttt{double}.
+
+
+Внутри программы используются ещё некоторый вспомогательные структуры: \texttt{MatBuffer} и \texttt{SubMatrix}, которые
+используются для создания выровненного буфера памяти и хранения информации о матрицах и их подматрицах без лишнего копирования.
+\begin{itemize}
+    \item \texttt{\textcolor{blue}{class} MatBuffer} используется для аллокации и деаллокации выровненного буфера, который нужен для размещения в памяти
+        промежуточных матриц, а также для выделения памяти в рамках тестирования.
+    \item \texttt{\textcolor{blue}{struct} SubMatrix} хранит в себе указатель на начало матрицы в памяти, её размеры, а также расстояние в памяти между соседними строками,
+        что позволяет осуществлять доступ к отдельным подматрицам некоторой матрицы путем задания начала подматрицы, её размеров и шага между соседними строками.
+\end{itemize}
+
+
+\newsubsection{Описание логики программы}
+Работу функции можно разбить на следующие этапы:
+\begin{itemize}
+    \item [\textbf{1.}] Разложение верхнего левого блока $A_{11}$ размера $k \times k$ с помощью параллельного неблочного метода Холецкого.
+    \item [\textbf{2.}] Параллельное решение СЛАУ с $A_{21}$ и $L_{11}$ для нахождения $L_{21}$.
+    \item [\textbf{3.}] Параллельное матричное умножение $L_{21}L_{21}^T$ и нахождение матричной разности $\tilde{A} = A_{22} - L_{21}L_{21}^T$.
+    \item [\textbf{4.}] Реккурсивный вызов функции для разложения $\tilde{A}$.
+\end{itemize}
+
+\textbf{1. Разложение верхнего диагонального блока.} Для разложения верхнего диагонального блока используется
+параллельный алгоритм Холецкого. В неблочном алгоритме сначала вычисляется диагональный элемент матрицы $L$, после
+чего параллельно вычисляются элементы под диагональным. Параллельность достигается за счёт использования директивы
+\texttt{\#pragma omp parallel for}. При этом для вычисления сумм элементов матрицы $L$ используются
+в том числе и SIMD инструкции. За счёт использования FMA (Fused-multiplication-addition) инструкций получается утилизировать параллелизм на уровне данных и 
+обрабатывать числа пачками по 4 за одну итерацию внутреннего цикла параллельной секции.
+
+\textbf{2. Параллельное решение СЛАУ.}  Для решения набора СЛАУ используетя алгоритм Гаусса. Параллельность тут достигается за 
+счёт решения нескольких систем одновременно (для разных правых частей). Также, здесь используются SIMD FMA инструкции.
+
+\textbf{3. Параллельное матричное умножение.} Матричное умножение выполняется по классическому алгоритму, однако, в данном
+случае можно заметить, что умножение идёт матрицы на транспонированную матрицу, что означает доступ к обоеим матрицам вдоль строк,
+что сокращает число кэш промахов. В данном случае снова для нахождения сумм произведений используются SIMD FMA инструкций, а так же
+параллелизуется проход по разным строкам.
+
+\newsection{Реализация параллельного алгоритма с импользованием общей памяти}
+В неблочном алгоритме Холецкого основной блок вычислений не может быть параллельным (ввиду зависимости между итерациями цикла),
+вместо этого параллельно выполняются вычисления поддиагональных элементов
+\begin{lstlisting}[language=C++, frame=single]
+    for (int j = 0; j < A.m; ++j) {
+        // Находим диагональный элемент (j, j) в L.
+
+#pragma omp parallel for private(...) schedule(dynamic, 8)
+        for (int s = j + 1; s < L.n; ++s) {
+            // Находим поддиагональные элементы используя найденный выше элемент
+            // даигонали.
+        }
+    }
+\end{lstlisting}
+
+Для вычисления решения СЛАУ основной блок помещается под директиву \texttt{\#pragma omp parallel for}
+\begin{lstlisting}[language=C++, frame=single]
+#pragma omp parallel for
+    for (int k = 0; k < B.n; ++k) {
+        for (int j = 0; j < A.m; ++j) {
+            for (int s = 0; s < quot; ++s) {
+                // Непосредственно вычисления значений выходной марицы.
+        }
+    }
+}
+\end{lstlisting}
+
+Матричное произведение вычисляется схожим образом с решением СЛАУ.
+
+В итоговом блочном алгоритме последовательно выполняется набор параллельных алгоритмов, как было описано в начале раздела.
+
+\newsection{Описание тестовых задач}
+В рамках изучения реализованного алгоритма была проведена проверка корректности результата вычислений и замеры производительности.
+
+\newsubsection{Проверка корректности результата}
+Для проверки корректности используется относительная невязка $\frac{|| LL^T - A ||_2}{||A||_2}$, а вернее её оценка с использованием
+матричной нормы Фробениуса $\frac{|| LL^T - A ||_2}{||A||_2} \leqslant \frac{\sqrt{n}|| LL^T - A ||_F}{||A||_F}$, где $n$ - порядок матрицы $A$.
+В рамках тестов размер блока в блочном алгоритме был выбран $k = 64$. Такой размер позволяет эффективно использовать кэш память процессора
+и уменьшить число промахов в кэш.
+
+Для тестов корректности и производительности специально была написана функция для генерации случайных входных данных. Чтобы проверить, что 
+алгоримт корректно отрабаывает, была произведена серия тестов с вычислением относительной погрешности.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{| c | c |}
+        \hline
+        Порядок входной матрицы $n$ & Относительная погрешность \\
+        \hline
+        4 & $8.324 \times 10^{-17}$ \\
+        7 & $1.351 \times 10^{-17}$ \\
+        13 & $2.383 \times 10^{-16}$ \\
+        31 & $3.131 \times 10^{-16}$ \\
+        54 & $3.953 \times 10^{-16}$ \\
+        119 & $8.698 \times 10^{-16}$ \\
+        128 & $9.524 \times 10^{-16}$ \\
+        137 & $1.013 \times 10^{-15}$ \\
+        153 & $1.125 \times 10^{-15}$ \\
+        201 & $1.477 \times 10^{-15}$ \\
+        997 & $6.312 \times 10^{-15}$ \\
+        \hline
+    \end{tabular}
+    \caption{Результаты проверки на корректность}
+    \label{table:1}
+\end{table}
+
+Как можно видеть из таблицы \ref{table:1}, на всех испробованых размерах входных данных величина относительной невязки не превосходила
+установленного критерия $< 0.01$.
+
+\newsubsection{Тесты производительности и масштабируемости}
+Для замеров производительности и эффективности была выбрана матрица с фиксированным размером $n = 2048$ и размером блока $k = 512$. Большой размер удобен тем,
+что позволяет создать нагрузку на потоки и сократить относительное влияние накладных расходов на параллелизм. Оцениваться будут параметры ускорения
+($S = \frac{T_1}{T_p}$) и эффективности ($E = \frac{S}{p} \times 100\%$), где $p$-число используемых потоков.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{| c | c | c | c |}
+        \hline
+        Число потоков $p$ & Время выполнения, мс & Ускорение $S$ & Эффективность $E$, \% \\
+        \hline
+        1 & 444.3 & 1 & 100 \\
+        2 & 300.1 & 1.48 & 74.02 \\
+        3 & 227 & 1.96 & 65.24 \\
+        4 & 184 & 2.415 & 60.36 \\
+        6 & 133.5 & 3.32 & 55.47 \\
+        \hline
+    \end{tabular}
+    \caption{Результаты проверки производительности}
+    \label{table:2}
+\end{table}
+
+Из таблицы можно сделать вывод, что при использовании небольшого количества потоков (2-4) наблюдается существенный рост производительности.
+Однако с дальнейшим ростом числа потоков эффективность начинает падать. Во многом такая деградация ускорения вызвана исчерпанием
+пропускной способности памяти. Во всех рассмотренных случаях, тем не менее, эффективность была выше порога в 50\%.
+
+\newsection{Заключение}
+В ходе данной лабораторной работы, был реализован блочный алгоритм Холецкого. Алгоримт был исследован на корректность, производительность
+и масштабируемость. В ходе тестирования было показано, что алгоритм соотвествует требованиям на корректность с большим запасом (значения
+относительно невязки порядка $10^{-16}$). С точки зрения производительности алгоритм соотвествует ожиданиям, показывая 
+неплохую масштабируемость ($>50$\% эффективности на всех многопоточных тестах) и высокую скорость работы.
+
+\begin{thebibliography}{99}
+
+\bibitem{Barkalov}
+    Баркалов К.А. Метод Холецкого: презентация лекции по курсу ``Параллельные численные методы''. ННГУ им. Н.И. Лобачевского
+
+\end{thebibliography}
+\newpage
+
+\appendix
+\section{Приложение. Код}
+\begin{lstlisting}[language=C++, frame=single]
+#include "common/memory_utils.hpp"
+#include "common/numeric_utils.hpp"
+#include "common/test_utils.hpp"
+
+#include <chrono>
+#include <cstring>
+#include <immintrin.h>
+#include <iomanip>
+#include <iostream>
+#include <omp.h>
+#include <random>
+#include <stdlib.h>
+#include <vector>
+
+static constexpr int64_t maskarr[] = { -1, -1, -1, -1, 0, 0, 0, 0 };
+
+struct SubMatrix {
+    double* ptr;
+    int n;
+    int m;
+    int stride;
+};
+
+class MatBuffer {
+public:
+    explicit MatBuffer(size_t size, size_t alignment = 32) : _size(numeric::divUp(size * sizeof(double), alignment) * alignment), _align(alignment) {
+        _buffer = memory::aligned_alloc(_size, _align);
+    }
+    ~MatBuffer() {
+        memory::aligned_free(_buffer);
+    }
+
+    MatBuffer(const MatBuffer&) = delete;
+    MatBuffer& operator=(const MatBuffer&) = delete;
+
+    double* data() {
+        return static_cast<double*>(_buffer);
+    }
+
+    void memset(double val) {
+        ::memset(_buffer, val, _size);
+    }
+
+private:
+    void* _buffer;
+    size_t _align;
+    size_t _size;
+};
+
+//
+// Main funcs
+//
+
+// Solve AXT = BT for X
+inline void solveLinearSystemTransposed(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+    const int packSize = 4;
+#pragma omp parallel for
+    for (int k = 0; k < B.n; ++k) {
+        for (int j = 0; j < A.m; ++j) {
+            double acc = B.ptr[j + B.stride * k];
+
+            int quot = j / packSize;
+            int rem = j % packSize;
+            int X_start = X.stride * k;
+            int A_start = A.stride * j;
+            int pos = 0;
+            __m256d sum = _mm256_setzero_pd();
+            for (int s = 0; s < quot; ++s) {
+                pos = s * packSize;
+                __m256d A_elems = _mm256_loadu_pd(&A.ptr[pos + A_start]);
+                __m256d X_elems = _mm256_loadu_pd(&X.ptr[pos + X_start]);
+                sum = _mm256_fmadd_pd(A_elems, X_elems, sum);
+            }
+            pos = j - rem;
+
+            __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (packSize - rem)));
+            __m256d A_tail = _mm256_maskload_pd(&A.ptr[pos + A_start], mask);
+            __m256d X_tail = _mm256_maskload_pd(&X.ptr[pos + X_start], mask);
+            sum = _mm256_fmadd_pd(A_tail, X_tail, sum);
+
+            sum = _mm256_hadd_pd(sum, sum);
+            __m128d hi = _mm256_extractf128_pd(sum, 1);
+            __m128d res = _mm_add_sd(_mm256_castpd256_pd128(sum), hi);
+            acc -= _mm_cvtsd_f64(res);
+
+            X.ptr[j + X.stride * k] = acc / A.ptr[j + A.stride * j];
+        }
+    }
+}
+
+inline void choleskyDecomp(const SubMatrix& A, SubMatrix& L) {
+    constexpr int packSize = 4;
+    for (int j = 0; j < A.m; ++j) {
+        int L_start = L.stride * j;
+        double acc = A.ptr[j + A.stride * j];
+        int quot = j / packSize;
+        int rem = j % packSize;
+
+        __m256d sum = _mm256_setzero_pd();
+        __m256d curr_val = _mm256_setzero_pd();
+        for (int s = 0; s < quot; ++s) {
+            curr_val = _mm256_loadu_pd(&L.ptr[s * packSize + L_start]);
+            sum = _mm256_fmadd_pd(curr_val, curr_val, sum);
+        }
+        __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (packSize - rem)));
+        curr_val = _mm256_maskload_pd(&L.ptr[quot * packSize + L_start], mask);
+        sum = _mm256_fmadd_pd(curr_val, curr_val, sum);
+
+        sum = _mm256_hadd_pd(sum, sum);
+        __m128d hi = _mm256_extractf128_pd(sum, 1);
+        __m128d res = _mm_add_sd(_mm256_castpd256_pd128(sum), hi);
+        acc -= _mm_cvtsd_f64(res);
+
+        acc = std::sqrt(acc);
+        L.ptr[j + L_start] = acc;
+
+#pragma omp parallel for private(acc, quot, rem, sum) schedule(dynamic, 8)
+        for (int s = j + 1; s < L.n; ++s) {
+            acc = A.ptr[j + A.stride * s];
+
+            quot = j / packSize;
+            rem = j % packSize;
+            sum = _mm256_setzero_pd();
+            for (int k = 0; k < quot; ++k) {
+                __m256d a = _mm256_loadu_pd(&L.ptr[k * packSize + L_start]);
+                __m256d b = _mm256_loadu_pd(&L.ptr[k * packSize + L.stride * s]);
+                sum = _mm256_fmadd_pd(a, b, sum);
+            }
+            __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (packSize - rem)));
+            __m256d a_tail = _mm256_maskload_pd(&L.ptr[quot * packSize + L_start], mask);
+            __m256d b_tail = _mm256_maskload_pd(&L.ptr[quot * packSize + L.stride * s], mask);
+            sum = _mm256_fmadd_pd(a_tail, b_tail, sum);
+
+            sum = _mm256_hadd_pd(sum, sum);
+            __m128d hi = _mm256_extractf128_pd(sum, 1);
+            __m128d res = _mm_add_sd(_mm256_castpd256_pd128(sum), hi);
+            acc -= _mm_cvtsd_f64(res);
+
+            L.ptr[j + L.stride * s] = acc / L.ptr[j + L_start];
+        }
+    }
+}
+
+inline void extractBlock(const SubMatrix& block, SubMatrix& res) {
+    for (int i = 0; i < res.n; ++i) {
+        memcpy(&res.ptr[res.stride * i], &block.ptr[block.stride * i], res.m * sizeof(decltype(*block.ptr)));
+    }
+}
+
+inline void storeBlock(SubMatrix& block, const SubMatrix& res) {
+    for (int i = 0; i < res.n; ++i) {
+        memcpy(&block.ptr[block.stride * i], &res.ptr[res.stride * i], res.m * sizeof(decltype(*block.ptr)));
+    }
+}
+
+inline void storeBlockTransposed(SubMatrix& block, const SubMatrix& res) {
+#pragma omp parallel for
+    for (int i = 0; i < res.m; ++i) {
+        for (int j = 0; j < res.n; ++j) {
+            block.ptr[j + block.stride * i] = res.ptr[i + res.stride * j];
+        }
+    }
+}
+
+// X = ABT
+inline void transposedMatMulRef(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+#pragma omp parallel for
+    for (int i = 0; i < A.n; ++i) {
+        for (int j = 0; j < B.n; ++j) {
+            for (int k = 0; k < A.m; ++k) {
+                X.ptr[j + X.stride * i] += A.ptr[k + A.stride * i] * B.ptr[k + B.stride * j];
+            }
+        }
+    }
+}
+
+inline void transposedMatMul(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+    constexpr int pack_size = 4;
+#pragma omp parallel for
+    for (int i = 0; i < A.n; ++i) {
+        auto X_start = X.stride * i;
+        auto A_start = A.stride * i;
+        for (int j = 0; j < B.n; ++j) {
+            auto B_start = B.stride * j;
+
+            __m256d sum = _mm256_setzero_pd();
+            __m256d a, b;
+            int idx = 0;
+            for (; idx <= A.m - pack_size; idx += pack_size) {
+                a = _mm256_loadu_pd(&A.ptr[idx + A_start]);
+                b = _mm256_loadu_pd(&B.ptr[idx + B_start]);
+                sum = _mm256_fmadd_pd(a, b, sum);
+            }
+            __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (pack_size - (A.m - idx))));
+            __m256d a_tail = _mm256_maskload_pd(&A.ptr[idx + A_start], mask);
+            __m256d b_tail = _mm256_maskload_pd(&B.ptr[idx + B_start], mask);
+            sum = _mm256_fmadd_pd(a_tail, b_tail, sum);
+            sum = _mm256_hadd_pd(sum, sum);
+            __m128d hi = _mm256_extractf128_pd(sum, 1);
+            __m128d res = _mm_add_sd(_mm256_castpd256_pd128(sum), hi);
+            X.ptr[j + X_start] = _mm_cvtsd_f64(res);
+        }
+    }
+}
+
+// X = A - B
+void matAdd(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+    const int pack_size = 4;
+    const int quot = A.m / pack_size;
+    const int rem = A.m % pack_size;
+
+#pragma omp parallel for
+    for (int i = 0; i < A.n; ++i) {
+        int pos = 0;
+        int A_start = A.stride * i;
+        int B_start = B.stride * i;
+        int X_start = X.stride * i;
+
+        __m256d res = _mm256_setzero_pd();
+        for (int j = 0; j < quot; ++j) {
+            pos = j * pack_size;
+            __m256d a = _mm256_loadu_pd(&A.ptr[pos + A_start]);
+            __m256d b = _mm256_loadu_pd(&B.ptr[pos + B_start]);
+            res = _mm256_add_pd(a, b);
+            _mm256_storeu_pd(&X.ptr[pos + X_start], res);
+        }
+        pos = quot * pack_size;
+        __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (pack_size - rem)));
+        __m256d a_tail = _mm256_maskload_pd(&A.ptr[pos + A_start], mask);
+        __m256d b_tail = _mm256_maskload_pd(&B.ptr[pos + B_start], mask);
+        res = _mm256_add_pd(a_tail, b_tail);
+        _mm256_maskstore_pd(&X.ptr[pos + X_start], mask, res);
+    }
+}
+
+// X = A - B
+void matSub(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+    const int pack_size = 4;
+    const int quot = A.m / pack_size;
+    const int rem = A.m % pack_size;
+
+#pragma omp parallel for
+    for (int i = 0; i < A.n; ++i) {
+        int pos = 0;
+        int A_start = A.stride * i;
+        int B_start = B.stride * i;
+        int X_start = X.stride * i;
+
+        __m256d res = _mm256_setzero_pd();
+        for (int j = 0; j < quot; ++j) {
+            pos = j * pack_size;
+            __m256d a = _mm256_loadu_pd(&A.ptr[pos + A_start]);
+            __m256d b = _mm256_loadu_pd(&B.ptr[pos + B_start]);
+            res = _mm256_sub_pd(a, b);
+            _mm256_storeu_pd(&X.ptr[pos + X_start], res);
+        }
+        pos = quot * pack_size;
+        __m256i mask = _mm256_loadu_si256((const __m256i*)(maskarr + (pack_size - rem)));
+        __m256d a_tail = _mm256_maskload_pd(&A.ptr[pos + A_start], mask);
+        __m256d b_tail = _mm256_maskload_pd(&B.ptr[pos + B_start], mask);
+        res = _mm256_sub_pd(a_tail, b_tail);
+        _mm256_maskstore_pd(&X.ptr[pos + X_start], mask, res);
+    }
+}
+
+void blockedCholeskyDec(const SubMatrix& A, SubMatrix& L) {
+    const int blk_mult = 512;
+    const int blk_size = A.n < blk_mult ? A.n : blk_mult;
+    const int blk_buffer_size = blk_size * blk_size;
+    const int rem_blk_size = A.n - blk_size;
+    const int rem_ll_buffer_size = rem_blk_size * blk_size;
+    const int rem_lr_buffer_size = rem_blk_size * rem_blk_size;
+    MatBuffer A_ul_buf(blk_buffer_size);
+    SubMatrix A_ul{ A_ul_buf.data(), blk_size, blk_size, blk_size };
+    SubMatrix A_ul_src{ A.ptr, blk_size, blk_size, A.stride };
+    MatBuffer L_ul_buf(blk_buffer_size);
+    SubMatrix L_ul{ L_ul_buf.data(), blk_size, blk_size, blk_size };
+
+    extractBlock(A_ul_src, A_ul);
+    choleskyDecomp(A_ul, L_ul);
+
+    SubMatrix L_ul_dst{ L.ptr, blk_size, blk_size, L.stride };
+    storeBlock(L_ul_dst, L_ul);
+
+    if (rem_blk_size == 0) {
+        return;
+    }
+
+    MatBuffer A_ll_buf(rem_ll_buffer_size);
+    SubMatrix A_ll{ A_ll_buf.data(), rem_blk_size, blk_size, blk_size };
+    SubMatrix A_ll_src{ &A.ptr[blk_size * A.stride], rem_blk_size, blk_size, A.stride };
+    MatBuffer L_ll_buf(rem_ll_buffer_size);
+    SubMatrix L_ll{ L_ll_buf.data(), rem_blk_size, blk_size, blk_size };
+
+    extractBlock(A_ll_src, A_ll);
+    solveLinearSystemTransposed(L_ul, A_ll, L_ll);
+    SubMatrix L_ll_dst{ &L.ptr[blk_size * L.stride], rem_blk_size, blk_size, L.stride };
+    storeBlock(L_ll_dst, L_ll);
+
+    MatBuffer A_lr_buf(rem_lr_buffer_size);
+    SubMatrix A_lr{ A_lr_buf.data(), rem_blk_size, rem_blk_size, rem_blk_size };
+    SubMatrix A_lr_src{ &A.ptr[blk_size * A.stride + blk_size], rem_blk_size, rem_blk_size, A.stride };
+
+    extractBlock(A_lr_src, A_lr);
+
+    MatBuffer L_ll_prod_buf(rem_lr_buffer_size);
+    SubMatrix L_ll_prod{ L_ll_prod_buf.data(), rem_blk_size, rem_blk_size, rem_blk_size };
+
+    transposedMatMul(L_ll, L_ll, L_ll_prod);
+    matSub(A_lr, L_ll_prod, A_lr);
+
+    SubMatrix L_lr{ &L.ptr[blk_size * L.stride + blk_size], rem_blk_size, rem_blk_size, L.stride };
+    blockedCholeskyDec(A_lr, L_lr);
+}
+
+void Cholesky_Decomposition(double* A, double* L, int n) {
+    SubMatrix sA{ A, n, n, n };
+    SubMatrix sL{ L, n, n, n };
+
+    blockedCholeskyDec(sA, sL);
+}
+
+//
+// Helpers
+//
+
+void randomlyFillLowerTriang(SubMatrix& X) {
+    std::random_device rd;
+    std::mt19937 gen(time(0));
+    double max = 1.5l, min = 1.l;
+    std::uniform_int_distribution<int> dist(0, 100);
+
+    for (size_t i = 0; i < X.m; i++) {
+        for (size_t j = 0; j < i + 1; j++) {
+            X.ptr[j + X.stride * i] = static_cast<double>(dist(gen)) / 100.l * (max - min) + min;
+        }
+    }
+}
+
+double calRelResidual(const SubMatrix& A, const SubMatrix& X) {
+    // Cacl relative residual using Frobenius norm
+    double acc = 0.l;
+    double t;
+    for (size_t i = 0; i < A.m; ++i) {
+        for (size_t j = 0; j < A.n; ++j) {
+            t = A.ptr[j + A.stride * i] - X.ptr[j + X.stride * i];
+            if (std::isnan(t)) {
+                t = 0.l;
+            }
+            acc += t * t;
+        }
+    }
+
+    auto diff_norm = std::sqrt(acc);
+
+    acc = 0.l;
+    for (size_t i = 0; i < A.m; ++i) {
+        for (size_t j = 0; j < A.n; ++j) {
+            t = A.ptr[j + A.stride * i];
+            acc += t * t;
+        }
+    }
+
+    auto A_norm = std::sqrt(acc / A.m);
+
+    if (A_norm == 0) {
+        return 0;
+    }
+
+    return diff_norm / A_norm;
+}
+\end{lstlisting}
+\end{document}
