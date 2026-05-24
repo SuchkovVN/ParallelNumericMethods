@@ -8,3 +8,8 @@ build/
 *.out
 *.toc
 *.synctexx.gz
+*.exe
+*.ilk
+*.obj
+*.pdb
+*.gz
