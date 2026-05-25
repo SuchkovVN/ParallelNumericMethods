@@ -11,6 +11,7 @@
 #include <random>
 #include <stdlib.h>
 #include <vector>
+#include <string>
 
 static constexpr int64_t maskarr[] = { -1, -1, -1, -1, 0, 0, 0, 0 };
 
@@ -88,6 +89,23 @@ inline void solveLinearSystemTransposed(const SubMatrix& A, const SubMatrix& B, 
     }
 }
 
+inline void solveLinearSystemTransposed_NOSIMD(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+#pragma omp parallel for
+    for (int k = 0; k < B.n; ++k) {
+        for (int j = 0; j < A.m; ++j) {
+            int X_start = X.stride * k;
+            int A_start = A.stride * j;
+
+            double acc = B.ptr[j + B.stride * k];
+            for (int s = 0; s < j; ++s) {
+                acc += A.ptr[s + A_start] * X.ptr[s + X_start];
+            }
+
+            X.ptr[j + X_start] = acc / A.ptr[j + A_start];
+        }
+    }
+}
+
 inline void choleskyDecomp(const SubMatrix& A, SubMatrix& L) {
     constexpr int packSize = 4;
     for (int j = 0; j < A.m; ++j) {
@@ -114,7 +132,7 @@ inline void choleskyDecomp(const SubMatrix& A, SubMatrix& L) {
         acc = std::sqrt(acc);
         L.ptr[j + L_start] = acc;
 
-#pragma omp parallel for private(acc, quot, rem, sum) schedule(dynamic, 8)
+#pragma omp parallel for private(acc, quot, rem, sum) schedule(dynamic)
         for (int s = j + 1; s < L.n; ++s) {
             acc = A.ptr[j + A.stride * s];
 
@@ -136,6 +154,28 @@ inline void choleskyDecomp(const SubMatrix& A, SubMatrix& L) {
             __m128d res = _mm_add_sd(_mm256_castpd256_pd128(sum), hi);
             acc -= _mm_cvtsd_f64(res);
 
+            L.ptr[j + L.stride * s] = acc / L.ptr[j + L_start];
+        }
+    }
+}
+
+inline void choleskyDecomp_NOSIMD(const SubMatrix& A, SubMatrix& L) {
+    for (int j = 0; j < A.m; ++j) {
+        int L_start = L.stride * j;;
+        double acc = A.ptr[j + A.stride * j];
+        for (int s = 0; s < j; ++s) {
+            acc += L.ptr[s + L_start] *  L.ptr[s + L_start];
+        }
+
+        acc = std::sqrt(acc);
+        L.ptr[j + L_start] = acc;
+
+#pragma omp parallel for private(acc) schedule(dynamic)
+        for (int s = j + 1; s < L.n; ++s) {
+            acc = A.ptr[j + A.stride * s];
+            for (int k = 0; k < j; ++k) {
+                acc += L.ptr[k + L_start] * L.ptr[k + L.stride * s];
+            }
             L.ptr[j + L.stride * s] = acc / L.ptr[j + L_start];
         }
     }
@@ -263,6 +303,16 @@ void matSub(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
     }
 }
 
+// X = A - B
+void matSub_NOSIMD(const SubMatrix& A, const SubMatrix& B, SubMatrix& X) {
+#pragma omp parallel for
+    for (int i = 0; i < A.n; ++i) {
+        for (int j = 0; j < A.m; ++j) {
+            X.ptr[j + i * X.stride] = A.ptr[j + i * A.stride] - B.ptr[j + i * A.stride];
+        }
+    }
+}
+
 void blockedCholeskyDec(const SubMatrix& A, SubMatrix& L) {
     const int blk_mult = 512;
     const int blk_size = A.n < blk_mult ? A.n : blk_mult;
@@ -311,6 +361,56 @@ void blockedCholeskyDec(const SubMatrix& A, SubMatrix& L) {
 
     SubMatrix L_lr{ &L.ptr[blk_size * L.stride + blk_size], rem_blk_size, rem_blk_size, L.stride };
     blockedCholeskyDec(A_lr, L_lr);
+}
+
+void blockedCholeskyDec_NOSIMD(const SubMatrix& A, SubMatrix& L) {
+    const int blk_mult = 512;
+    const int blk_size = A.n < blk_mult ? A.n : blk_mult;
+    const int blk_buffer_size = blk_size * blk_size;
+    const int rem_blk_size = A.n - blk_size;
+    const int rem_ll_buffer_size = rem_blk_size * blk_size;
+    const int rem_lr_buffer_size = rem_blk_size * rem_blk_size;
+    MatBuffer A_ul_buf(blk_buffer_size);
+    SubMatrix A_ul{ A_ul_buf.data(), blk_size, blk_size, blk_size };
+    SubMatrix A_ul_src{ A.ptr, blk_size, blk_size, A.stride };
+    MatBuffer L_ul_buf(blk_buffer_size);
+    SubMatrix L_ul{ L_ul_buf.data(), blk_size, blk_size, blk_size };
+
+    extractBlock(A_ul_src, A_ul);
+    choleskyDecomp_NOSIMD(A_ul, L_ul);
+
+    SubMatrix L_ul_dst{ L.ptr, blk_size, blk_size, L.stride };
+    storeBlock(L_ul_dst, L_ul);
+
+    if (rem_blk_size == 0) {
+        return;
+    }
+
+    MatBuffer A_ll_buf(rem_ll_buffer_size);
+    SubMatrix A_ll{ A_ll_buf.data(), rem_blk_size, blk_size, blk_size };
+    SubMatrix A_ll_src{ &A.ptr[blk_size * A.stride], rem_blk_size, blk_size, A.stride };
+    MatBuffer L_ll_buf(rem_ll_buffer_size);
+    SubMatrix L_ll{ L_ll_buf.data(), rem_blk_size, blk_size, blk_size };
+
+    extractBlock(A_ll_src, A_ll);
+    solveLinearSystemTransposed_NOSIMD(L_ul, A_ll, L_ll);
+    SubMatrix L_ll_dst{ &L.ptr[blk_size * L.stride], rem_blk_size, blk_size, L.stride };
+    storeBlock(L_ll_dst, L_ll);
+
+    MatBuffer A_lr_buf(rem_lr_buffer_size);
+    SubMatrix A_lr{ A_lr_buf.data(), rem_blk_size, rem_blk_size, rem_blk_size };
+    SubMatrix A_lr_src{ &A.ptr[blk_size * A.stride + blk_size], rem_blk_size, rem_blk_size, A.stride };
+
+    extractBlock(A_lr_src, A_lr);
+
+    MatBuffer L_ll_prod_buf(rem_lr_buffer_size);
+    SubMatrix L_ll_prod{ L_ll_prod_buf.data(), rem_blk_size, rem_blk_size, rem_blk_size };
+
+    transposedMatMulRef(L_ll, L_ll, L_ll_prod);
+    matSub(A_lr, L_ll_prod, A_lr);
+
+    SubMatrix L_lr{ &L.ptr[blk_size * L.stride + blk_size], rem_blk_size, rem_blk_size, L.stride };
+    blockedCholeskyDec_NOSIMD(A_lr, L_lr);
 }
 
 void Cholesky_Decomposition(double* A, double* L, int n) {
@@ -413,8 +513,10 @@ int main(int argc, char* argv[]) {
 
     testing::TestResults tRes(numTests);
 
+    std::cout << "blockedCholeskyDec no avx v. blockedCholeskyDec avx\n";
+
     for (size_t i = 0; i < numTests; ++i) {
-        tRes.set(i, testing::meassureCall(choleskyDecomp, B, X), testing::meassureCall(Cholesky_Decomposition, B.ptr, X.ptr, N));
+        tRes.set(i, testing::meassureCall(blockedCholeskyDec_NOSIMD, B, X), testing::meassureCall(blockedCholeskyDec, B, X));
     }
 
     tRes.finalize();
