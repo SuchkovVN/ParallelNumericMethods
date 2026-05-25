@@ -7,9 +7,9 @@ build/
 *.log
 *.out
 *.toc
-*.synctexx.gz
 *.exe
 *.ilk
 *.obj
 *.pdb
 *.gz
+*.log

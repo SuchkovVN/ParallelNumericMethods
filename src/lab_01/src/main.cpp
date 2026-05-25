@@ -10,10 +10,12 @@
 #include <omp.h>
 #include <random>
 #include <stdlib.h>
-#include <vector>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 static constexpr int64_t maskarr[] = { -1, -1, -1, -1, 0, 0, 0, 0 };
+static constexpr double cvNanosecSec = 1'000'000.l;
 
 struct SubMatrix {
     double* ptr;
@@ -161,10 +163,11 @@ inline void choleskyDecomp(const SubMatrix& A, SubMatrix& L) {
 
 inline void choleskyDecomp_NOSIMD(const SubMatrix& A, SubMatrix& L) {
     for (int j = 0; j < A.m; ++j) {
-        int L_start = L.stride * j;;
+        int L_start = L.stride * j;
+        ;
         double acc = A.ptr[j + A.stride * j];
         for (int s = 0; s < j; ++s) {
-            acc += L.ptr[s + L_start] *  L.ptr[s + L_start];
+            acc += L.ptr[s + L_start] * L.ptr[s + L_start];
         }
 
         acc = std::sqrt(acc);
@@ -483,7 +486,6 @@ int main(int argc, char* argv[]) {
         numThreads = std::stoi(argv[3]);
     }
     omp_set_num_threads(numThreads);
-    omp_set_dynamic(0);
     int N = K, M = K;
     int size = N * M;
 
@@ -509,7 +511,7 @@ int main(int argc, char* argv[]) {
     randomlyFillLowerTriang(X_test);
     transposedMatMul(X_test, X_test, B);
 
-    std::cout << "Start testing\n";
+    std::cout << "Start comparsion...\n";
 
     testing::TestResults tRes(numTests);
 
@@ -525,12 +527,61 @@ int main(int argc, char* argv[]) {
     auto max = tRes.getMax();
     auto median = tRes.getMedian();
 
+    std::cout << "Comparsion Ended\n";
     std::cout << "[Test] Min speedup: " << min.speedUp << " %, ref time: " << testing::convertUsToMs(min.refTime)
               << " ms, test time: " << testing::convertUsToMs(min.testTime) << " ms\n"
               << "[Test] Max speedup: " << max.speedUp << " %, ref time: " << testing::convertUsToMs(max.refTime)
               << " ms, test time: " << testing::convertUsToMs(max.testTime) << " ms\n"
               << "[Test] Median speedup " << median.speedUp << " %, ref time: " << testing::convertUsToMs(median.refTime)
               << " ms, test time: " << testing::convertUsToMs(median.testTime) << " ms\n";
+
+    std::vector<int> num_threads = { 1, 2, 3, 4, 5, 6 };
+
+    std::cout << "Start individual perf testing...\n";
+    std::cout << "Testing: blockedCholeskyDec (noavx)\n";
+
+    auto time = testing::meassureCall(blockedCholeskyDec_NOSIMD, B, X) / cvNanosecSec;
+    std::cout << "Warmup time (ms): " << time << '\n';
+
+    std::vector<double> time_results(numTests);
+    for (auto p : num_threads) {
+        omp_set_num_threads(p);
+        for (size_t i = 0; i < numTests; ++i) {
+            time_results[i] = testing::meassureCall(blockedCholeskyDec_NOSIMD, B, X) / cvNanosecSec;
+        }
+        std::sort(time_results.begin(), time_results.end());
+        auto median_time = time_results[numTests % 2 ? (numTests - 1) / 2 : numTests / 2];
+        double time_single_th, eff, speedup;
+        if (p == 1) {
+            time_single_th = median_time;
+        }
+
+        speedup = time_single_th / median_time;
+        eff = speedup / p * 100.l;
+        std::cout << std::setw(10) << p << std::setw(15) << median_time << std::setw(15) << speedup << std::setw(19) << eff << "%" << '\n';
+    }
+
+    std::cout << "Testing: blockedCholeskyDec (avx)\n";
+
+    time = testing::meassureCall(blockedCholeskyDec, B, X) / cvNanosecSec;
+    std::cout << "Warmup time (ms): " << time << '\n';
+
+    for (auto p : num_threads) {
+        omp_set_num_threads(p);
+        for (size_t i = 0; i < numTests; ++i) {
+            time_results[i] = testing::meassureCall(blockedCholeskyDec, B, X) / cvNanosecSec;
+        }
+        std::sort(time_results.begin(), time_results.end());
+        auto median_time = time_results[numTests % 2 ? (numTests - 1) / 2 : numTests / 2];
+        double time_single_th, eff, speedup;
+        if (p == 1) {
+            time_single_th = median_time;
+        }
+
+        speedup = time_single_th / median_time;
+        eff = speedup / p * 100.l;
+        std::cout << std::setw(10) << p << std::setw(15) << median_time << std::setw(15) << speedup << std::setw(19) << eff << "%" << '\n';
+    }
 
     return 0;
 }
